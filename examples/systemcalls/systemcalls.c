@@ -16,8 +16,15 @@ bool do_system(const char *cmd)
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
+    int rs = system(cmd);
+    if (WIFEXITED(rs)) {
+	printf("system() call executed and returned with status: %d\n", WEXITSTATUS(rs));
+	return true;
+    } else {
+	printf("system() function call failed with status: %d\n", WEXITSTATUS(rs));
+	return false;
+    }
 
-    return true;
 }
 
 /**
@@ -58,10 +65,32 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
-
     va_end(args);
 
-    return true;
+    int status;
+    pid_t child_pid;
+
+    child_pid = fork();
+    if (child_pid == -1) {
+	perror("fork error");
+	return false;
+    }
+
+    if (child_pid == 0) {
+	/* this is the child process */
+	if (execv(command[0], command) == -1) {
+	    perror("execve error");
+	    exit(EXIT_FAILURE);
+	}
+    }
+
+    if (waitpid(child_pid, &status, 0) == -1) {
+	perror("waitpid error");
+	return false;
+    } else if (WEXITSTATUS(status) != 0) {return false;}
+    else {return true;}
+
+
 }
 
 /**
@@ -95,5 +124,43 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
 
     va_end(args);
 
-    return true;
+    pid_t child_pid;
+    int status;
+
+    child_pid = fork();
+    if (child_pid == -1) {
+        perror("fork error");
+	return false;
+    } else if (child_pid == 0) {
+	// Child Process
+	int fd = open(outputfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if (fd < 0) {
+	    return false;
+	} else {
+	    if (dup2(fd, STDOUT_FILENO) < 0) {
+		close(fd);
+		return false;
+	    } else {
+		close(fd);
+		execv(command[0], command);
+		exit(-1);
+	    }
+	}
+    } else {
+	// Parent Process
+	wait(&status);
+	if (WIFEXITED(status)) {
+            
+            if (WEXITSTATUS(status) != 0 )
+                return false;
+
+            return true;
+        }
+        else {
+            return false;
+        }
+	    
+    }
+
+    return false;
 }
